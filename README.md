@@ -1,2 +1,0 @@
-# myseries
-Show the series 
