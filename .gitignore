@@ -58,8 +58,12 @@ typings/
 .env
 
 #configuration
-./config
+./config/*
 
 #ide env
-./vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 
