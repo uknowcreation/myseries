@@ -1,5 +1,6 @@
 
 // Imports
+const asyncLib = require('async');
 const bcrypt = require('bcrypt-nodejs');
 const jwt = require('../utils/jwt.utils');
 const regex = require('../utils/regex');
@@ -10,100 +11,125 @@ const saltRounds = 10;
 // Routes
 module.exports = {
   register: function(req, res) {
-    // TODO: implements register
     let email = req.body.email;
     let username = req.body.username;
     let password = req.body.password;
     let firstname = req.body.firstname;
     let lastname = req.body.lastname;
     let bio = req.body.bio;
-
+    
     if (email == null || username == null || password == null) {
       return res.status(400).json({ 'error': 'Missing parameters' });
     }
-    // verify length, email regex, password ...
+
     if ( username.length >= 13 || username.length <= 4 ) {
       return res.status(400).json({ 'error': 'Wrong Username(must be length 5 - 12)'});
     }
-    
+
     if (!regex.generateMailRegex(email).test(email)) {
       return res.status(400).json({ 'error': 'Email is invalid'});
     }
-    
+
     if (!regex.generatePasswordRegex(password).test(password)) {
       return res.status(400).json({ 'error': 'Password is invalid'});
     }
-
-    // check if email good or not
-    models.User.findOne({
-      attributes: ['email'],
-      where: { email: email }
-    })
-    .then(function(userFound) {
-      if (!userFound) {
-        bcrypt.hash(password, bcrypt.genSaltSync(saltRounds), null, function(err, hashpwd) {
-          console.log(err);
-          let newUser = models.User.create({
-            email: email,
-            username: username,
-            password: hashpwd,
-            firstname: firstname,
-            lastname: lastname,
-            bio: bio,
-            isAdmin: 0,
-            isActive: 1,
-          })
-          .then(function(newUser){
-            return res.status(201).json({ 'userId': newUser.id });
-          })
-          .catch(function(err){
-            log.info(err.stack);
-            return res.status(500).json({ 'error': 'cannot add user' });
-          });
+    
+    asyncLib.waterfall([
+      function(done) {
+        models.User.findOne({
+          attributes: ['email'],
+          where: { email: email }
+        })
+        .then(function(userFound) {
+          done(null, userFound);
+        })
+        .catch(function(err){
+          return res.status(500).json({'error': 'Unable to verify user'});
         });
-
-      } else {
+      },
+      function(userFound, done) {
+        if(!userFound) {
+          bcrypt.hash(password, bcrypt.genSaltSync(saltRounds), null, function(err, hashpwd) {
+            done(null, userFound, hashpwd);
+          });
+        }
         return res.status(409).json({ 'error': 'user already exist' });
+      },
+      function(userFound, hashpwd, done) {
+        let newUser = models.User.create({
+          email: email,
+          username: username,
+          password: hashpwd,
+          firstname: firstname,
+          lastname: lastname,
+          bio: bio,
+          isAdmin: 0,
+          isActive: 1,
+        })
+        .then(function(newUser){
+          done(newUser);
+        })
+        .catch(function(err){
+          return res.status(500).json({'error': 'Cannot add user'});
+        })
       }
-    })
-    .catch(function(err) {
-      log.info(err.stack);
-      return res.status(500).json({ 'error': 'unable to verify user' });
+    ],
+    function(newUser) {
+      if(newUser) {
+        return res.status(201).json({
+          'userId': newUser.id
+        });
+      }
+      return res.status(500).json({ 'err': 'Error! cannot add user'})
     });
   },
   // Login function 
   login: function(req, res) {
-    //Params
     let email = req.body.email;
     let password = req.body.password;
-    // Check if mail and password not null
+
     if (email == null || password == null) {
       return res.status(400).json({ 'error': 'Missing paramters in register' });
     }
-    console.log(models.User.findOne({
-      where: { email: email }
-    }));
-    // Sequelize method ORM findOne
-    models.User.findOne({
-      where: { email: email }
-    })
-    .then(function(userFound){
-      if (userFound) {    
-        bcrypt.compare(password, userFound.password, function(errBycrypt, resBycrypt) {
-          if (resBycrypt) {
-            return res.status(200).json({
-              'userId': userFound.id,
-              'token': jwt.generateTokenForUser(userFound),
-            });
-          }
+
+    asyncLib.waterfall([
+      function(done) {
+        models.User.findOne({
+          where: { email: email }
+        })
+        .then(function(userFound) {
+          done(null, userFound);
+        })
+        .catch(function(err) {
+          return res.status(500).json({ 'error': 'unable to verify user' });
         });
-      } else {
-        return res.status(404).json({ 'error': 'User not exist' });
+      },
+      function(userFound, done) {
+        if (userFound) {
+          bcrypt.compare(password, userFound.password, function(errBycrypt, resBycrypt) {
+            done(null, userFound, resBycrypt);
+          });
+        } else {
+          return res.status(404).json({ 'error': 'user not exist in DB' });
+        }
+      },
+      function(userFound, resBycrypt, done) {
+        if (resBycrypt) {
+          done(userFound);
+        } 
+        return res.status(403).json({ 'error': 'invalid password' });
       }
-    })
-    .catch(function(err){
-      log.info(err);
-      return res.status(500).json({ 'error': 'unable to verify user' });
+    ], function(userFound) {
+      if (userFound) {
+        return res.status(201).json({
+          userId: userFound.id,
+          token: jwt.generateTokenForUser(userFound)
+        });
+      }
+      return res.status(500).json({'erro': 'wrong token'});
     });
+  },
+  getUserProfile: function(req, res) {
+    let headerAuth =   req.headers['authorization'];
   }
 };
