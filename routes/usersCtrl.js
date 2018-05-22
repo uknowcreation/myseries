@@ -17,13 +17,14 @@ module.exports = {
     let firstname = req.body.firstname;
     let lastname = req.body.lastname;
     let bio = req.body.bio;
+    let roleId = 2;
     
     if (email == null || username == null || password == null) {
       return res.status(400).json({ 'error': 'Missing parameters' });
     }
 
-    if ( username.length >= 13 || username.length <= 4 ) {
-      return res.status(400).json({ 'error': 'Wrong Username(must be length 5 - 12)'});
+    if (username.length >= 13 || username.length <= 4) {
+      return res.status(400).json({ 'error': 'wrong username (must be length 5 - 12)' });
     }
 
     if (!regex.generateMailRegex(email).test(email)) {
@@ -31,6 +32,7 @@ module.exports = {
     }
 
     if (!regex.generatePasswordRegex(password).test(password)) {
+      console.log(password);
       return res.status(400).json({ 'error': 'Password is invalid'});
     }
     
@@ -64,7 +66,7 @@ module.exports = {
           lastname: lastname,
           bio: bio,
           isAdmin: 0,
-          isActive: 1,
+          isActive: 1
         })
         .then(function(newUser){
           done(newUser);
@@ -130,6 +132,24 @@ module.exports = {
     });
   },
   getUserProfile: function(req, res) {
-    let headerAuth =   req.headers['authorization'];
+    let headerAuth = req.headers['authorization'];
+    let userId = jwt.getUserId(headerAuth);
+  
+    if (userId < 0) {
+      models.User.findOne({
+        attributes: [ 'id', 'email', 'username', 'bio' ],
+        where: { id: userId }
+      })
+      .then(function(user){
+        if (user) {
+          res.status(201).json(user);
+        } else {
+          res.status(400).json({ 'error': 'user not found' })
+        }
+      })
+      .catch(function(err) {
+        res.status(500).json({ 'error': 'cannot fetch user'})
+      })
+    }
   }
 };
